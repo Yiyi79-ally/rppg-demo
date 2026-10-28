@@ -4,10 +4,16 @@ Contactless heart-rate measurement from an ordinary laptop or phone camera, buil
 Each heartbeat changes the colour of facial skin by a fraction of a percent; the camera picks it up and the
 POS algorithm (Wang et al., 2017) turns it into a heart rate, updated every second.
 
-**Try it:** open the live demo (English): `index.html` · Chinese version: `zh.html`
-(on GitHub Pages: `https://yiyi79-ally.github.io/rppg-demo/`). Allow camera access, click **Start camera**,
+**Try it:** https://yiyi79-ally.github.io/rppg-demo/ (opens `index_en.html`; works on phones too). Allow camera access, click **Start camera**,
 keep still under even light. Everything runs in the browser; the video is never uploaded.
 Not a medical device.
+
+## On a phone
+
+Open the link above in Safari (iPhone) or Chrome (Android), tap **Start camera** and allow the camera; the front
+camera is used. Prop the phone up at arm's length, face it under even light and keep still; the first reading
+appears after about 5 s. If live camera access is refused, use **Record a video** instead: record 20 to 60 s of
+your face and the page analyses the recording. Fill-light mode works, but a phone screen is a weak light source.
 
 ## Results (MAE = mean absolute error, beats per minute)
 
@@ -34,7 +40,8 @@ The signal processing is written from scratch in JavaScript (`src/rppg_core.js`)
 
 | File | What it is |
 | --- | --- |
-| `index.html`, `zh.html` | The demo (English / Chinese), single self-contained files that also work offline |
+| `index_en.html` | The demo, a single self-contained file that also works offline (download it and double-click) |
+| `index.html` | Redirects the site's address to `index_en.html` |
 | `src/rppg_core.js` | Signal processing: resampling, detrending, Butterworth band-pass, POS, spectrum, smoothing |
 | `src/mp_face.js` | MediaPipe Face Landmarker wrapper and face regions |
 | `src/face_tracker.js` | Fallback face tracker (pico.js) |
