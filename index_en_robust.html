@@ -111,7 +111,7 @@ button:focus-visible, .filebtn:focus-within { outline: 2px solid var(--accent); 
     <div class="fnote" id="fillChip"></div>
     <div class="fnote" id="fillStat"></div>
     <div class="fnote" id="fillAlt"></div>
-    <div class="fnote">Shown variant <select id="fVarSel"><option value="base">Baseline</option><option value="tilt">Tilt</option><option value="harm">Harmonic</option><option value="motion">Motion ref</option><option value="patch">Patches</option><option value="combo">Combo</option><option value="pt">Patches+Tilt</option><option value="robust">Robust (new)</option></select></div>
+    <div class="fnote">Shown variant <select id="fVarSel"><option value="base">Baseline</option><option value="tilt">Tilt</option><option value="harm">Harmonic</option><option value="motion">Motion ref</option><option value="patch">Patches</option><option value="combo">Combo</option><option value="pt">Patches+Tilt</option><option value="robust">Robust (new)</option><option value="rb_nosplice">Robust w/o splice</option><option value="rb_notrack">Robust w/o tracking</option></select></div>
     <div class="fnote" id="fillNote">The whole screen is the lamp: keep still and face it. Feel your pulse and tap the screen (or press Space) on every beat.</div>
   </div>
 
@@ -132,7 +132,7 @@ button:focus-visible, .filebtn:focus-within { outline: 2px solid var(--accent); 
       <span>High-confidence readings <b id="fGood">0/0</b></span>
     </div>
     <div class="facts">
-      <span>Shown variant <select id="varSel"><option value="base">Baseline</option><option value="tilt">Tilt</option><option value="harm">Harmonic</option><option value="motion">Motion ref</option><option value="patch">Patches</option><option value="combo">Combo</option><option value="pt">Patches+Tilt</option><option value="robust">Robust (new)</option></select></span>
+      <span>Shown variant <select id="varSel"><option value="base">Baseline</option><option value="tilt">Tilt</option><option value="harm">Harmonic</option><option value="motion">Motion ref</option><option value="patch">Patches</option><option value="combo">Combo</option><option value="pt">Patches+Tilt</option><option value="robust">Robust (new)</option><option value="rb_nosplice">Robust w/o splice</option><option value="rb_notrack">Robust w/o tracking</option></select></span>
       <span id="varAll">All variants: —</span>
     </div>
   </section>
@@ -899,8 +899,8 @@ window.MP_SRC = {"bundleB64": "dmFyIHQ9InVuZGVmaW5lZCIhPXR5cGVvZiBzZWxmP3NlbGY6e
   //   patch  : 12 smaller patches (each region split in 4), fused by their signal quality
   //   combo  : patch + harm + motion
   //   pt     : patch + tilt (15 Oct, after exercise: tilt and patch were the two that helped)
-  var VARIANTS = ["base", "tilt", "harm", "motion", "patch", "combo", "pt", "robust"], stabs = {}, dispVar = "robust";   // shown by default: Robust (5 Nov: motion handling + HR tracking + 12 s window)
-  var VNAME = { base: "Baseline", tilt: "Tilt", harm: "Harmonic", motion: "Motion ref", patch: "Patches", combo: "Combo", pt: "Patches+Tilt", robust: "Robust" };
+  var VARIANTS = ["base", "tilt", "harm", "motion", "patch", "combo", "pt", "robust", "rb_nosplice", "rb_notrack"], stabs = {}, dispVar = "robust";   // shown by default: Robust (5 Nov: motion handling + HR tracking + 12 s window)
+  var VNAME = { base: "Baseline", tilt: "Tilt", harm: "Harmonic", motion: "Motion ref", patch: "Patches", combo: "Combo", pt: "Patches+Tilt", robust: "Robust", rb_nosplice: "Robust w/o splice", rb_notrack: "Robust w/o tracking" };
   VARIANTS.forEach(function (v) { stabs[v] = new RPPG.Stabilizer(); });   // anti-jump: long window when stable, ambiguity pick, median of 5
 
   function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
@@ -931,7 +931,7 @@ window.MP_SRC = {"bundleB64": "dmFyIHQ9InVuZGVmaW5lZCIhPXR5cGVvZiBzZWxmP3NlbGY6e
   } else setTimeout(function () { setModel("pico"); }, 0);
 
   function resetBuffer(reason) {
-    state = newState(); VARIANTS.forEach(function (v) { stabs[v].reset(); }); rbTracker.reset();
+    state = newState(); VARIANTS.forEach(function (v) { stabs[v].reset(); }); rbTracker.reset(); rbTrackerNS.reset();
     $("bpm").innerHTML = "--<small>bpm</small>"; $("bpm").classList.remove("prov"); $("fRaw").textContent = "—";
     $("meter").style.width = "0"; $("detail").textContent = "Confidence —";
     setChip(reason || "Getting ready", "idle");
@@ -1085,7 +1085,7 @@ window.MP_SRC = {"bundleB64": "dmFyIHQ9InVuZGVmaW5lZCIhPXR5cGVvZiBzZWxmP3NlbGY6e
       return P;
     }
     function median(a) { var b = Array.prototype.slice.call(a).sort(function (p, q) { return p - q; }); return b.length ? b[Math.floor(b.length / 2)] : 0; }
-    function badMask(cols, mv) {   // cols: [ [R,G,B] resampled per region ], mv: [x, y, w] resampled
+    function badMask(cols, mv, half) {   // cols: [ [R,G,B] resampled per region ], mv: [x, y, w] resampled
       var N = cols[0][0].length, bad = new Uint8Array(N), n;
       cols.forEach(function (C) {
         var d = new Float64Array(N);
@@ -1096,7 +1096,7 @@ window.MP_SRC = {"bundleB64": "dmFyIHQ9InVuZGVmaW5lZCIhPXR5cGVvZiBzZWxmP3NlbGY6e
         for (n = 0; n < N; n++) if (d[n] > lim) bad[n] = 1;
       });
       for (n = 1; n < N; n++) if (Math.hypot(mv[0][n] - mv[0][n - 1], mv[1][n] - mv[1][n - 1]) > 0.01 * (mv[2][n] || 1)) bad[n] = 1;
-      var out = new Uint8Array(N), half = 3, cnt = 0;
+      var out = new Uint8Array(N), cnt = 0;
       for (n = 0; n < N; n++) if (bad[n]) for (var j = Math.max(0, n - half); j <= Math.min(N - 1, n + half); j++) out[j] = 1;
       for (n = 0; n < N; n++) cnt += out[n];
       if (cnt > 0.9 * N) out.fill(0);   // moving the whole time: nothing left to keep
@@ -1110,10 +1110,10 @@ window.MP_SRC = {"bundleB64": "dmFyIHQ9InVuZGVmaW5lZCIhPXR5cGVvZiBzZWxmP3NlbGY6e
         return out;
       });
     }
-    function clean(h) {
+    function clean(h, zero) {   // zero (optional): frames to set to 0 (the "no splice" ablation)
       var N = h.length, n, m = median(h), dv = Array.prototype.map.call(h, function (v) { return Math.abs(v - m); }), s = 1.4826 * median(dv) || 1e-9;
       var out = new Float64Array(N), ss = 0;
-      for (n = 0; n < N; n++) { out[n] = isFinite(h[n]) ? Math.max(-4 * s, Math.min(4 * s, h[n])) : 0; ss += out[n] * out[n]; }
+      for (n = 0; n < N; n++) { out[n] = (zero && zero[n]) || !isFinite(h[n]) ? 0 : Math.max(-4 * s, Math.min(4 * s, h[n])); ss += out[n] * out[n]; }
       var sd = Math.sqrt(ss / Math.max(1, N)) || 1;
       for (n = 0; n < N; n++) out[n] /= sd;
       return out;
@@ -1137,15 +1137,18 @@ window.MP_SRC = {"bundleB64": "dmFyIHQ9InVuZGVmaW5lZCIhPXR5cGVvZiBzZWxmP3NlbGY6e
       this.D = D; this.last = F[arg]; return F[arg];
     };
     // one estimate from the buffered frames since index `from`
-    function estimate(s, from, tracker) {
+    // opts.noSplice: ablation, frames zeroed AFTER POS (+-0.4 s) instead of spliced before it
+    // opts.noTrack : ablation, plain spectrum peak each second (no tracking)
+    function estimate(s, from, tracker, opts) {
+      opts = opts || {};
       var tw = s.t.slice(from);
       var rs = function (arr, c) { return RPPG.resample(tw, arr.slice(from).map(function (v) { return v[c]; }), FS); };
       var cols = s.reg.map(function (arr) { return [rs(arr, 0), rs(arr, 1), rs(arr, 2)]; });
       var mv = [rs(s.mv, 0), rs(s.mv, 1), rs(s.mv, 2)];
-      var bad = badMask(cols, mv), N = bad.length, fused = new Float64Array(N), nb = 0, n;
+      var bad = badMask(cols, mv, opts.noSplice ? Math.round(0.4 * FS) : 3), N = bad.length, fused = new Float64Array(N), nb = 0, n;
       for (n = 0; n < N; n++) nb += bad[n];
       cols.forEach(function (C) {
-        var S = splice(C, bad), h = clean(RPPG.pos(S[0], S[1], S[2], FS)), P = power(h), pm = 0;
+        var S = opts.noSplice ? C : splice(C, bad), h = clean(RPPG.pos(S[0], S[1], S[2], FS), opts.noSplice ? bad : null), P = power(h), pm = 0;
         for (var k = 0; k < K; k++) pm = Math.max(pm, P[k]);
         for (n = 0; n < N; n++) fused[n] += pm * pm * h[n];
       });
@@ -1153,14 +1156,14 @@ window.MP_SRC = {"bundleB64": "dmFyIHQ9InVuZGVmaW5lZCIhPXR5cGVvZiBzZWxmP3NlbGY6e
       for (k = 0; k < K; k++) { P[k] = Math.pow(P0[k], 0.5 + good); sum += P[k]; }
       for (k = 0; k < K; k++) P[k] /= sum || 1;
       var bpm, share = 0;
-      if (tw[tw.length - 1] - tw[0] < 7.5) { var a = 0; for (k = 1; k < K; k++) if (P[k] > P[a]) a = k; bpm = F[a]; }   // short window: no tracking yet
+      if (opts.noTrack || tw[tw.length - 1] - tw[0] < 7.5) { var a = 0; for (k = 1; k < K; k++) if (P[k] > P[a]) a = k; bpm = F[a]; }   // short window: no tracking yet
       else bpm = tracker.step(P);
       for (k = 0; k < K; k++) if (Math.abs(F[k] - bpm) <= 5) share += P0[k];
       return { bpm: bpm, confidence: share, good: good, snrDb: 10 * Math.log10(share / Math.max(1e-6, 1 - share)), filtered: fused };
     }
     return { estimate: estimate, Tracker: Tracker };
   })();
-  var RB_WIN = 12, RB_CONF = 0.4, rbTracker = new RB.Tracker();
+  var RB_WIN = 12, RB_CONF = 0.4, rbTracker = new RB.Tracker(), rbTrackerNS = new RB.Tracker();
 
   function estimate(tt) {
     var s = state, i0 = 0;
@@ -1216,10 +1219,13 @@ window.MP_SRC = {"bundleB64": "dmFyIHQ9InVuZGVmaW5lZCIhPXR5cGVvZiBzZWxmP3NlbGY6e
     };
     var j0 = 0; while (j0 < s.t.length && s.t[j0] < tt - LONG) j0++;
     var w5 = est(i0), w10 = tt >= WINDOW + 1 ? est(j0) : null, all = {};   // 5 s + up to 10 s
-    VARIANTS.forEach(function (v) { if (v !== "robust") all[v] = { hr: w5[v], shown: stabs[v].update(w5[v], w10 && w10[v]) }; });
+    VARIANTS.forEach(function (v) { if (w5[v]) all[v] = { hr: w5[v], shown: stabs[v].update(w5[v], w10 && w10[v]) }; });
     var r0 = 0; while (r0 < s.t.length && s.t[r0] < tt - RB_WIN) r0++;
     var rb = RB.estimate(s, r0, rbTracker);
     all.robust = { hr: rb, shown: { bpm: rb.bpm, provisional: tt < 8 } };
+    var rbA = RB.estimate(s, r0, rbTrackerNS, { noSplice: true }), rbB = RB.estimate(s, r0, null, { noTrack: true });
+    all.rb_nosplice = { hr: rbA, shown: { bpm: rbA.bpm, provisional: tt < 8 } };
+    all.rb_notrack = { hr: rbB, shown: { bpm: rbB.bpm, provisional: tt < 8 } };
     var hr = all[dispVar].hr, shown = all[dispVar].shown;
     var allTxt = VARIANTS.map(function (v) { return VNAME[v] + " " + Math.round(all[v].shown.bpm); }).join(" · ");
     $("varAll").textContent = "All variants: " + allTxt; $("fillAlt").textContent = allTxt;
@@ -1247,7 +1253,7 @@ window.MP_SRC = {"bundleB64": "dmFyIHQ9InVuZGVmaW5lZCIhPXR5cGVvZiBzZWxmP3NlbGY6e
     log.push([clock(), Math.round(shown.bpm * 10) / 10, Math.round(hr.bpm * 10) / 10, shown.provisional ? 1 : 0,
               Math.round(hr.confidence * 1000) / 1000, Math.round(motionFrac * 100) / 100, tapNow === null ? "" : Math.round(tapNow * 10) / 10, mp ? "MediaPipe" : "pico",
               fillOn ? fillColor : "off", meth, dispVar].concat([].concat.apply([], VARIANTS.map(function (v) {
-              return [Math.round(all[v].shown.bpm * 10) / 10, Math.round(all[v].hr.bpm * 10) / 10]; }))));
+              return [Math.round(all[v].shown.bpm * 10) / 10, Math.round(all[v].hr.bpm * 10) / 10]; })), [wallClock()]));
     if (s.history.length > 120) s.history.shift();
     drawStrips();
   }
@@ -1256,6 +1262,10 @@ window.MP_SRC = {"bundleB64": "dmFyIHQ9InVuZGVmaW5lZCIhPXR5cGVvZiBzZWxmP3NlbGY6e
   // Every tap is a beat. BPM = 60 / median of the last 8 intervals (within the last 15 s), so a
   // single double-tap or a missed beat does not move it. Shown only while taps keep coming.
   var T0 = performance.now(), taps = [], log = [];
+  function wallClock() {   // local time of day, to line up with a smartwatch's heart-rate log
+    var d = new Date(), p2 = function (n) { return (n < 10 ? "0" : "") + n; };
+    return p2(d.getHours()) + ":" + p2(d.getMinutes()) + ":" + p2(d.getSeconds());
+  }
   function clock(ms) { return Math.round(((ms || performance.now()) - T0)) / 1000; }
   function tapBpm() {
     var now = clock(), recent = taps.filter(function (t) { return now - t <= 15; });
@@ -1406,7 +1416,7 @@ window.MP_SRC = {"bundleB64": "dmFyIHQ9InVuZGVmaW5lZCIhPXR5cGVvZiBzZWxmP3NlbGY6e
     if (recStart !== null) rows.push("# video_start_s=" + recStart);
     rows.push("# session_start_s=" + sessionStart);
     rows.push("# camera_lock=" + (lockState || "none") + " (the light / method columns give the lighting and algorithm of each row)");
-    rows.push("time_s,camera_bpm,raw_5s_bpm,provisional,confidence,motion_frac,tap_bpm,face_model,light,method,shown_variant," + VARIANTS.map(function (v) { return v + "_bpm," + v + "_raw_5s"; }).join(","));
+    rows.push("time_s,camera_bpm,raw_5s_bpm,provisional,confidence,motion_frac,tap_bpm,face_model,light,method,shown_variant," + VARIANTS.map(function (v) { return v + "_bpm," + v + "_raw_5s"; }).join(",") + ",wall_clock");
     // only this camera session (since the recording started), so each CSV matches its video
     var from = (recStart !== null ? recStart : sessionStart) - 0.5;
     log.forEach(function (r) { if (r[0] >= from) rows.push(r.join(",")); });
